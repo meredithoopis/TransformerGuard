@@ -1,0 +1,5 @@
+h5py==3.9.0
+tqdm==4.65.0
+gymnasium[mujoco]==0.27.1
+mujoco==2.3.3
+
