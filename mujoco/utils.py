@@ -50,15 +50,15 @@ def set_seed_everywhere(env: gym.Env, seed=0):
 
 def get_space_shape(space, is_vector_env=False):
     if isinstance(space, Discrete):
-        return space.n
+        return space.n #n of possible actions 
     elif isinstance(space, MultiDiscrete):
-        return space.nvec[0]
+        return space.nvec[0] #action space size per dimension: All 3 tested environments are 2-dimensional 
     elif isinstance(space, Box):
         space_shape = space.shape[1:] if is_vector_env else space.shape
-        if len(space_shape) == 1:
+        if len(space_shape) == 1: #if is a vector  
             return space_shape[0]
         else:
-            return space_shape  # image observation
+            return space_shape  # if is a full image 
     else:
         raise ValueError(f"Space not supported: {space}")
     
@@ -87,7 +87,7 @@ def moving_average(a, n):
         return a
     ret = np.cumsum(a, dtype=float, axis=-1)
     ret[n:] = ret[n:] - ret[:-n]
-    return (ret[n - 1:] / n).tolist()
+    return (ret[n - 1:] / n).tolist() #return a list of cumulative sums for each point 
 
 def pad_and_get_mask(lists):
     """
@@ -96,9 +96,9 @@ def pad_and_get_mask(lists):
     lens = [len(l) for l in lists]
     max_len = max(lens)
     arr = np.zeros((len(lists), max_len), float)
-    mask = np.arange(max_len) < np.array(lens)[:, None]
+    mask = np.arange(max_len) < np.array(lens)[:, None] #mask of valid values 
     arr[mask] = np.concatenate(lists)
-    return np.ma.array(arr, mask=~mask)
+    return np.ma.array(arr, mask=~mask) #return masked array
 
 def plot_scores(scores, steps=None, window=100, label=None, color=None):
     avg_scores = [moving_average(score, window) for score in scores]
@@ -106,7 +106,7 @@ def plot_scores(scores, steps=None, window=100, label=None, color=None):
         for i in range(len(scores)):
             avg_scores[i] = np.interp(np.arange(steps[i][-1]), [0] + steps[i][-len(avg_scores[i]):], [0.0] + avg_scores[i])
     if len(scores) > 1:
-        avg_scores = pad_and_get_mask(avg_scores)
+        avg_scores = pad_and_get_mask(avg_scores) #pad scores if multiple lists 
         scores = avg_scores.mean(axis=0)
         scores_l = avg_scores.mean(axis=0) - avg_scores.std(axis=0)
         scores_h = avg_scores.mean(axis=0) + avg_scores.std(axis=0)

@@ -41,9 +41,7 @@ def get_keys(h5file):
 
 def get_dataset(env, env_name, dataset_type):
     dataset_url = os.path.join(DATASET_URL_BASE, f'{env_name}_{dataset_type}-v2.hdf5')
-    #h5path = filepath_from_url(dataset_url)
-    #if not os.path.exists(h5path):
-     #   raise IOError("Dataset file not found at %s. Please ensure it is downloaded manually." % h5path)
+
 
     h5path = download_dataset_from_url(dataset_url)
     data_dict = {}

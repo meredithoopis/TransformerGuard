@@ -1,3 +1,5 @@
+#inspiration: https://github.com/kzl/decision-transformer/blob/master/gym/decision_transformer/models/decision_transformer.py
+#https://github.com/kzl/decision-transformer
 import os
 import math
 import torch
@@ -10,7 +12,7 @@ class MaskedCausalAttention(nn.Module):
         super().__init__()
 
         self.n_heads = n_heads
-        self.context_len = context_len
+        self.context_len = context_len #n of time steps
 
         self.q_net = nn.Linear(hidden_dim, hidden_dim)
         self.k_net = nn.Linear(hidden_dim, hidden_dim)
@@ -22,10 +24,9 @@ class MaskedCausalAttention(nn.Module):
         self.proj_drop = nn.Dropout(drop_p)
 
         ones = torch.ones((context_len, context_len))
-        mask = torch.tril(ones).view(1, 1, context_len, context_len)
+        mask = torch.tril(ones).view(1, 1, context_len, context_len) # a lower-triangular mask; prevent positions from attending to future timesteps
 
-        # register buffer makes sure mask does not get updated
-        # during backpropagation
+        # register buffer makes sure mask does not get updated during backpropagation
         self.register_buffer('mask', mask)
 
     def forward(self, x):
@@ -41,7 +42,7 @@ class MaskedCausalAttention(nn.Module):
         # weights (B, N, T, T)
         weights = q @ k.transpose(2, 3) / math.sqrt(D)
         # causal mask applied to weights
-        weights = weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf'))
+        weights = weights.masked_fill(self.mask[..., :T, :T] == 0, float('-inf')) #causal mask, setting elements to -inf where the mask is 0, ensuring future timesteps don’t influence past ones
 
         # normalize weights, all -inf -> 0 after softmax
         normalized_weights = F.softmax(weights, dim=-1)

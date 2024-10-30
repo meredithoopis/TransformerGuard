@@ -9,8 +9,8 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def discount_cumsum(x, gamma):
     discount_cumsum = np.zeros_like(x)
-    discount_cumsum[-1] = x[-1]
-    for t in reversed(range(x.shape[0]-1)):
+    discount_cumsum[-1] = x[-1] #last element is the final reward 
+    for t in reversed(range(x.shape[0]-1)): #iterates backward and calculates the cumulative discounted reward
         discount_cumsum[t] = x[t] + gamma * discount_cumsum[t+1]
     return discount_cumsum
 
@@ -27,7 +27,7 @@ class SequenceBuffer():
         self.state_dim = trajectories[0]['observations'].shape[1]
         self.action_dim = trajectories[0]['actions'].shape[1]
         self.context_len = context_len
-        self.size = sum([len(traj['observations']) for traj in trajectories]) + 1  # plus one for padding zeros
+        self.size = sum([len(traj['observations']) for traj in trajectories]) + 1  # total number of frames + one for padding zeros
 
         self.states = np.zeros((self.size, self.state_dim), dtype=np.float32)
         self.actions = np.zeros((self.size, self.action_dim), dtype=np.float32)
@@ -37,7 +37,7 @@ class SequenceBuffer():
         self.traj_sp = np.zeros(self.num_trajs, dtype=np.int32)  # trajectory start point
         self.traj_returns = np.zeros(self.num_trajs, dtype=np.float32)
         self.rng = np.random.default_rng(seed)
-        traj_pointer = 0
+        traj_pointer = 0 #track position in states and actions where each trajectory's data is stored   
 
         for i, traj in enumerate(trajectories):
             self.traj_sp[i] = traj_pointer
@@ -47,6 +47,7 @@ class SequenceBuffer():
             assert observations.shape[0] == actions.shape[0] == rewards.shape[0], 'observations, actions, rewards should have the same length'
             self.traj_length[i] = observations.shape[0]
 
+            #store each trajectory's data sequentially 
             self.states[self.traj_sp[i]: self.traj_sp[i] + self.traj_length[i]] = observations
             self.actions[self.traj_sp[i]: self.traj_sp[i] + self.traj_length[i]] = actions
             self.rewards_to_go[self.traj_sp[i]: self.traj_sp[i] + self.traj_length[i]] = discount_cumsum(rewards, gamma)
@@ -60,16 +61,16 @@ class SequenceBuffer():
         self.drop_fn = get_drop_fn(drop_cfg, self.size, self.traj_sp, self.rng)
             
     def sample(self, batch_size):
-        selected_traj = self.rng.choice(np.arange(self.num_trajs), batch_size, replace=True, p=self.p_sample)
+        selected_traj = self.rng.choice(np.arange(self.num_trajs), batch_size, replace=True, p=self.p_sample) #select a batch of trajectories 
         selected_traj_sp = self.traj_sp[selected_traj]
         selected_offset = np.floor(self.rng.random(batch_size) * (self.traj_length[selected_traj] - self.context_len)).astype(np.int32).clip(min=0)
         selected_sp = selected_traj_sp + selected_offset
         selected_ep = selected_sp + self.traj_length[selected_traj].clip(max=self.context_len)
 
         # fill the index of those padded steps with -1, so that we can fetch the last step of the corresponding item, which is zero intentionally
-        selected_index = selected_sp[:, None] + np.arange(self.context_len)
+        selected_index = selected_sp[:, None] + np.arange(self.context_len) #an index array for each step in the sequence 
         selected_index = np.where(selected_index < selected_ep[:, None], selected_index, -1)
-        masks = selected_index >= 0
+        masks = selected_index >= 0 #valid steps 
         timesteps = selected_offset[:, None] + np.arange(self.context_len)  # we don't care about the timestep for those padded steps
         
         # update and get drop mask
