@@ -1,4 +1,4 @@
-name: sample_env
+name: hanh_env
 channels:
   - pytorch
   - nvidia

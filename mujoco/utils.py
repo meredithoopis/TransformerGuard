@@ -28,7 +28,7 @@ def config_logging(log_file="main.log"):
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
 
-    # Set up the FileHandler for logging to a file
+
     file_handler = logging.FileHandler(log_file, mode='a')
     file_handler.setFormatter(logging.Formatter(log_format, datefmt=date_format))
     logging.basicConfig(level=logging.INFO, handlers=[stdout_handler, file_handler])
@@ -50,7 +50,7 @@ def set_seed_everywhere(env: gym.Env, seed=0):
 
 def get_space_shape(space, is_vector_env=False):
     if isinstance(space, Discrete):
-        return space.n #n of possible actions 
+        return space.n 
     elif isinstance(space, MultiDiscrete):
         return space.nvec[0] #action space size per dimension: All 3 tested environments are 2-dimensional 
     elif isinstance(space, Box):

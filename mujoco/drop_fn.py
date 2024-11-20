@@ -1,103 +1,132 @@
 import numpy as np
 import gymnasium as gym
 
-def get_drop_fn(drop_cfg, buffer_size, traj_sp, rng):
-    if drop_cfg.drop_fn == 'const':
-        return ConstFn(buffer_size, drop_cfg.drop_p, drop_cfg.update_interval, traj_sp, rng)
-    elif drop_cfg.drop_fn == 'linear':
-        LinearFn(buffer_size, drop_cfg.start_p, drop_cfg.end_p, drop_cfg.ascend_steps, drop_cfg.update_interval, traj_sp, rng)
+
+def create_drop_function(drop_config, buffer_length, trajectory_start_points, random_generator):
+    """
+    Factory function to create a drop function based on the given configuration.
+
+    Args:
+        drop_config: Configuration for the drop function.
+        buffer_length: Total size of the buffer.
+        trajectory_start_points: Start points for each trajectory.
+        random_generator: Random number generator.
+
+    Returns:
+        Drop function instance.
+    """
+    if drop_config.drop_fn == "const":
+        return ConstDropFunction(buffer_length, drop_config.drop_p, drop_config.update_interval, trajectory_start_points, random_generator)
+    elif drop_config.drop_fn == "linear":
+        return LinearDropFunction(
+            buffer_length,
+            drop_config.start_p,
+            drop_config.end_p,
+            drop_config.ascend_steps,
+            drop_config.update_interval,
+            trajectory_start_points,
+            random_generator,
+        )
     else:
-        raise NotImplementedError(f'Unknown drop_fn: {drop_cfg.drop_fn}')
+        raise ValueError(f"Unsupported drop function type: {drop_config.drop_fn}")
 
 
-class DropWrapper(gym.Wrapper): #wrapper for randomly wrapping an observation 
-    def __init__(self, env, drop_p, seed) -> None:
+class ObservationDropWrapper(gym.Wrapper):
+    """
+    A Gym wrapper to randomly drop observations with a given probability.
+    """
+    def __init__(self, env, drop_probability, random_seed):
         super().__init__(env)
-        self.env = env
-        self.obs_drop_p = drop_p
-        self.last_obs = None  #store the last valid obs
-        self.rng = np.random.default_rng(seed)
-    
+        self.drop_probability = drop_probability
+        self.last_observation = None
+        self.random_generator = np.random.default_rng(random_seed)
+
     def step(self, action):
-        next_state, reward, done, trunc, info = self.env.step(action)
-        if self.rng.random() > self.obs_drop_p: # current observation is not dropped
-            self.last_obs = next_state
-            info['dropped'] = False
+        next_obs, reward, done, trunc, info = self.env.step(action)
+        if self.random_generator.random() > self.drop_probability:
+            self.last_observation = next_obs
+            info["dropped"] = False
         else:
-            info['dropped'] = True #drop the observation 
-        # the drop of reward is handled in the eval function
-        return self.last_obs, reward, done, trunc, info
-    
+            info["dropped"] = True
+        return self.last_observation, reward, done, trunc, info
+
     def reset(self, seed):
-        self.last_obs, info = self.env.reset(seed=seed)
-        return self.last_obs, info
+        self.last_observation, info = self.env.reset(seed=seed)
+        return self.last_observation, info
 
 
-class DropFn:
-    def __init__(self, size, update_interval, traj_sp, rng:np.random.Generator, drop_aware=True) -> None:
-        self.size = size
+class DropFunction:
+    """
+    Base class for managing the dropping of steps in a trajectory.
+    """
+    def __init__(self, buffer_size, update_frequency, trajectory_start_points, rng, drop_aware=True):
+        self.buffer_size = buffer_size
+        self.update_frequency = update_frequency
+        self.trajectory_start_points = np.append(trajectory_start_points, buffer_size - 1)
+        self.random_generator = rng
         self.step_count = 0
-        self.traj_sp = np.append(traj_sp, size - 1) #array of trajectory-specific points, which should not be dropped 
-        self.dropmask = np.ones((size,), dtype=np.bool8) #mask for dropped steps 
-        self.dropstep = np.zeros((size,), dtype=np.int32) #tracking gaps between valid points: how many steps since the last valid frame for each position 
-        self.update_interval = update_interval #how frequent the drop mask is updated 
-        self.rng = rng
         self.drop_aware = drop_aware
-        
-    def get_dropsteps(self, selected_index):
-        return self.dropstep[selected_index] #dropsteps at selected indices 
-    
-    def get_dropmasks(self, selected_index):
-        return self.dropmask[selected_index] #drop mask at selected indices 
+        self.drop_mask = np.ones(buffer_size, dtype=bool)
+        self.drop_steps = np.zeros(buffer_size, dtype=int)
 
-    def get_traj_sp_ep(self, selected_index):
-        sps = max(np.searchsorted(self.traj_sp, selected_index), 1) #find segment start; np.searchsorted: indices where elements should be inserted to maintain order 
-        return self.traj_sp[sps - 1], self.traj_sp[sps]
+    def get_dropped_steps(self, indices):
+        return self.drop_steps[indices]
+
+    def get_drop_mask(self, indices):
+        return self.drop_mask[indices]
 
     def step(self):
-        if not self.step_count % self.update_interval and self.drop_aware:
-            self.update_dropmask()
-            self.update_dropstep()
+        if self.step_count % self.update_frequency == 0 and self.drop_aware:
+            self.update_drop_mask()
+            self.calculate_drop_steps()
         self.step_count += 1
-        
-    def update_dropmask(self):
-        raise NotImplementedError
 
-    def update_dropstep(self): # get the distance since last valid frame
-        # inspired by https://stackoverflow.com/questions/18196811/cumsum-reset-at-nan
-        v = np.ones(self.size, dtype=np.int32)
-        c = np.cumsum(~self.dropmask) #cumulative count of dropped frames 
-        d = np.diff(np.concatenate(([0], c[self.dropmask]))) #Differences at valid frames only.
-        v[self.dropmask] = -d # Sets distance since the last valid frame at each valid frame position.
-        self.dropstep = np.cumsum(v) # # Cumulative sum to propagate distances.
-        self.dropstep[-1] = 0 #last pos reset to 0 
+    def update_drop_mask(self):
+        raise NotImplementedError("Drop mask update method must be implemented in subclasses.")
 
-
-class ConstFn(DropFn): #a const drop prob fn 
-    def __init__(self, size, drop_p, update_interval, traj_sp, rng, drop_aware=True) -> None:
-        super().__init__(size, update_interval, traj_sp, rng, drop_aware)
-        self.drop_p = drop_p
-
-    def update_dropmask(self):
-        self.dropmask = self.rng.random(self.size) > self.drop_p
-        self.dropmask[self.traj_sp] = True #trajectory points are not dropped 
-        self.dropmask[-1] = False #dont drop last frame 
+    def calculate_drop_steps(self):
+        """
+        Calculate the number of steps since the last valid frame.
+        """
+        cumulative_drops = np.cumsum(~self.drop_mask)
+        valid_frame_differences = np.diff(np.concatenate(([0], cumulative_drops[self.drop_mask])))
+        valid_frame_distances = np.ones(self.buffer_size, dtype=int)
+        valid_frame_distances[self.drop_mask] = -valid_frame_differences
+        self.drop_steps = np.cumsum(valid_frame_distances)
+        self.drop_steps[-1] = 0
 
 
-class LinearFn(DropFn):
-    def __init__(self, size, start_p, end_p, ascend_steps, update_interval, traj_sp, rng, drop_aware=True) -> None:
-        super().__init__(size, update_interval, traj_sp, rng, drop_aware)
-        # assert end_p > start_p, 'drop_p should ascend gradually'
-        self.start_p = start_p
-        self.end_p = end_p
+class ConstDropFunction(DropFunction):
+    """
+    Drop function with a constant probability for dropping observations.
+    """
+    def __init__(self, buffer_size, drop_probability, update_frequency, trajectory_start_points, rng, drop_aware=True):
+        super().__init__(buffer_size, update_frequency, trajectory_start_points, rng, drop_aware)
+        self.drop_probability = drop_probability
+
+    def update_drop_mask(self):
+        self.drop_mask = self.random_generator.random(self.buffer_size) > self.drop_probability
+        self.drop_mask[self.trajectory_start_points] = True
+        self.drop_mask[-1] = False
+
+
+class LinearDropFunction(DropFunction):
+    """
+    Drop function with a linearly increasing probability for dropping observations.
+    """
+    def __init__(self, buffer_size, start_probability, end_probability, ascend_steps, update_frequency, trajectory_start_points, rng, drop_aware=True):
+        super().__init__(buffer_size, update_frequency, trajectory_start_points, rng, drop_aware)
+        self.start_probability = start_probability
+        self.end_probability = end_probability
         self.ascend_steps = ascend_steps
 
-    def update_dropmask(self):
-        drop_p = self.end_p * np.min([1, self.step_count / self.ascend_steps]) + \
-            self.start_p * max([0, 1 - self.step_count / self.ascend_steps])
-        if self.step_count / self.ascend_steps in [0.25, 0.5, 0.75]:
-            print('*' * 20 + ' current drop_p is:%g ' % drop_p + '*' * 20)
-            #step count increase -> drop prob increase
-        self.dropmask = self.rng.random(self.size) > drop_p
-        self.dropmask[self.traj_sp] = True
-        self.dropmask[-1] = False
+    def update_drop_mask(self):
+        progress_ratio = min(self.step_count / self.ascend_steps, 1)
+        drop_probability = self.end_probability * progress_ratio + self.start_probability * (1 - progress_ratio)
+
+        if progress_ratio in [0.25, 0.5, 0.75]:
+            print(f"Progress: {progress_ratio:.2f}, Drop Probability: {drop_probability:.4f}")
+
+        self.drop_mask = self.random_generator.random(self.buffer_size) > drop_probability
+        self.drop_mask[self.trajectory_start_points] = True
+        self.drop_mask[-1] = False
