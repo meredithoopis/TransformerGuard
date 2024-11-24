@@ -28,7 +28,7 @@ and running:
 python download_dataset.py
 ```
 
-2. Training with fixable configurations: 
+2. Training with fixable configurations: The default environment is Hopper
 
 ```bash
 python main.py

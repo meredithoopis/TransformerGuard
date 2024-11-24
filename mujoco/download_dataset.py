@@ -47,7 +47,7 @@ def get_dataset(env, env_name, dataset_type):
     data_dict = {}
     with h5py.File(h5path, 'r') as dataset_file:
         for k in tqdm(get_keys(dataset_file), desc="load datafile"):
-            try:  # first try loading as an array
+            try:
                 data_dict[k] = dataset_file[k][:]
             except ValueError as e:  # try loading as a scalar
                 data_dict[k] = dataset_file[k][()]
