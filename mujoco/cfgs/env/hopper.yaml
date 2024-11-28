@@ -1,0 +1,4 @@
+# cfgs/env/hopper.yaml
+env_name: "Hopper"
+rtg_target: 4000
+max_timestep: 1000

@@ -1,0 +1,4 @@
+# cfgs/env/walker2d.yaml
+env_name: "Walker2d"
+rtg_target: 5000
+max_timestep: 1000

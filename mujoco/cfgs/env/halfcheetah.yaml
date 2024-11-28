@@ -1,0 +1,4 @@
+# cfgs/env/halfcheetah.yaml
+env_name: "HalfCheetah"
+rtg_target: 12000
+max_timestep: 1000
